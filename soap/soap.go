@@ -7,7 +7,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"time"
@@ -30,8 +29,9 @@ type SOAPEnvelopeResponse struct {
 }
 
 type SOAPEnvelope struct {
-	XMLName xml.Name `xml:"soap:Envelope"`
-	XmlNS   string   `xml:"xmlns:soap,attr"`
+	XMLName  xml.Name `xml:"soap:Envelope"`
+	XmlNS    string   `xml:"xmlns:soap,attr,omitempty"`
+	XMLNSInb string   `xml:"xmlns:inb,attr,omitempty"`
 
 	Header *SOAPHeader
 	Body   SOAPBody
@@ -176,9 +176,9 @@ func (f *SOAPFault) Error() string {
 
 // HTTPError is returned whenever the HTTP request to the server fails
 type HTTPError struct {
-	//StatusCode is the status code returned in the HTTP response
+	// StatusCode is the status code returned in the HTTP response
 	StatusCode int
-	//ResponseBody contains the body returned in the HTTP response
+	// ResponseBody contains the body returned in the HTTP response
 	ResponseBody []byte
 }
 
@@ -341,6 +341,7 @@ type Client struct {
 	opts        *options
 	headers     []interface{}
 	attachments []MIMEMultipartAttachment
+	XmlNs       map[string]string
 }
 
 // HTTPClient is a client which can make HTTP requests
@@ -356,8 +357,9 @@ func NewClient(url string, opt ...Option) *Client {
 		o(&opts)
 	}
 	return &Client{
-		url:  url,
-		opts: &opts,
+		url:   url,
+		opts:  &opts,
+		XmlNs: make(map[string]string),
 	}
 }
 
@@ -405,7 +407,8 @@ func (s *Client) Call(soapAction string, request, response interface{}) error {
 // Note that if SOAP fault is returned, it will be stored in the error.
 // On top the attachments array will be filled with attachments returned from the SOAP request.
 func (s *Client) CallContextWithAttachmentsAndFaultDetail(ctx context.Context, soapAction string, request,
-	response interface{}, faultDetail FaultError, attachments *[]MIMEMultipartAttachment) error {
+	response interface{}, faultDetail FaultError, attachments *[]MIMEMultipartAttachment,
+) error {
 	return s.call(ctx, soapAction, request, response, faultDetail, attachments)
 }
 
@@ -424,10 +427,12 @@ func (s *Client) CallWithFaultDetail(soapAction string, request, response interf
 }
 
 func (s *Client) call(ctx context.Context, soapAction string, request, response interface{}, faultDetail FaultError,
-	retAttachments *[]MIMEMultipartAttachment) error {
+	retAttachments *[]MIMEMultipartAttachment,
+) error {
 	// SOAP envelope capable of namespace prefixes
 	envelope := SOAPEnvelope{
-		XmlNS: XmlNsSoapEnv,
+		XmlNS:    XmlNsSoapEnv,
+		XMLNSInb: s.XmlNs["inb"],
 	}
 
 	if s.headers != nil && len(s.headers) > 0 {
@@ -456,7 +461,6 @@ func (s *Client) call(ctx context.Context, soapAction string, request, response 
 	if err := encoder.Flush(); err != nil {
 		return err
 	}
-
 	req, err := http.NewRequest("POST", s.url, buffer)
 	if err != nil {
 		return err
@@ -503,7 +507,7 @@ func (s *Client) call(ctx context.Context, soapAction string, request, response 
 	defer res.Body.Close()
 
 	if res.StatusCode >= 400 && res.StatusCode != 500 {
-		body, _ := ioutil.ReadAll(res.Body)
+		body, _ := io.ReadAll(res.Body)
 		return &HTTPError{
 			StatusCode:   res.StatusCode,
 			ResponseBody: body,
@@ -526,7 +530,7 @@ func (s *Client) call(ctx context.Context, soapAction string, request, response 
 	}
 
 	var mmaBoundary string
-	if s.opts.mma{
+	if s.opts.mma {
 		mmaBoundary, err = getMmaHeader(res.Header.Get("Content-Type"))
 		if err != nil {
 			return err
