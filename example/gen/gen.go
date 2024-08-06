@@ -4,12 +4,14 @@ import (
 	"encoding/xml"
 	"time"
 
-	"github.com/hooklift/gowsdl/soap"
+	"github.com/imkos/gowsdl/soap"
 )
 
 // against "unused imports"
-var _ time.Time
-var _ xml.Name
+var (
+	_ time.Time
+	_ xml.Name
+)
 
 type TradePriceRequest struct {
 	XMLName xml.Name `xml:"http://example.com/stockquote.xsd TradePriceRequest"`
